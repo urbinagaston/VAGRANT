@@ -1,0 +1,322 @@
+Generamos un nuevo directorio y allí dentro ejecutamos: vagrant init
+Nos creará un Vagrantfile. Editamos el Vagrantfile con vi o nano.
+
+CENTOS 7
+
+Descargar box = vagrant box add centos/7
+Crea archivo vagrantfile = vagrant init centos/7
+Levanta la máquina del vagrantfile = vagrant up
+
+Por defecto el usuario y contraseña es vagrant/vagrant
+
+UBUNTU 18
+
+vagrant init ubuntu/bionic64
+vagrant up
+Apagar y eliminar la máquina = vagrant destroy
+
+
+DEBIAN 9
+
+vagrant init debian/strech64
+vagrant up
+
+
+COMANDOS
+
+CREAR = vagrant init + vagrant up
+ESTADO = vagrant status
+INGRESAR SSH = vagrant ssh
+APAGAR VM = vagrant halt (-f para forzar)
+SUSPENDER VM = vagrant suspend
+ELIMINAR VM = vagrant destroy
+REFRESCAR CAMBIO = vagrant reload (Reinicia la máquina tomando los cambios)
+LISTAR LOS PROYECTOS = vagrant global-status
+
+
+
+OPCIONES VAGRANTFILE
+
+config.vm.hostname = "HostName"
+
+
+OPCIONES ESPECÍFICAS PARA VIRTUAL BOX
+
+vb.memory = "1024"
+vb.cpus = "2"
+vb.name = "HostName"
+
+
+
+
+REDES
+
+PORT FORWARD
+
+config.vm.network "forwarded_port", guest: 80, host: 8080, host_ip: "127.0.0.1"
+
+RED PRIVADA (HOST-ONLY)
+
+config.vm.network "private network", ip: "192.168.33.10"
+
+REDES PÚBLICAS (BRIDGE)
+
+config.vm.network "public network"
+
+
+
+
+COMPARTIR CARPETAS - """La vm debe tener instalada las guest additions"""
+
+Los archivo dentro del directorio donde se encuentra el vagrantfile serán accesibles por medio
+de la carpeta /vagrant dentro del guest. =  ./vagrantfile =>> /vagrant
+
+Los archivos que se encuentren en ./src estarán disponibles en /var/www/html del guest.
+./src =>> /var/www/html
+
+config.vm.box = "debian/contrib-strech64" (Fue construìdo con los guest additions)
+
+De forma más particular se puede configurar utilizando:
+config.vm.synced_folder "src", "/var/www/html"
+
+
+
+INTRO PROVISIONNING
+
+Inline = Dentro del vagrantfile
+Bash, Ansible, Puppet, Chef, Salt, etc.
+
+
+###INLINE:
+
+config.vm.provision "shell", inline <<-SHELL
+	apt-get update
+	apt-get install -y ngnix
+SHELL
+
+
+En el caso de querer agregar algo más al aprovisionamiento y queremos instalar un mysql-server
+o agregamos lo que necesitamos instalar y ejecutamos dentro del vagrantfile un: vagrant provision
+
+
+
+###SCRIPT BASH - El script se crea dentro de donde se encuentra el vagrantfile
+
+script.sh
+
+#!/bin/bash
+apt-get update
+apt-get install -y ngnix
+
+config.vm.provision "shell", path: "script.sh"
+
+
+#! /bin/bash
+
+if [ ! -f vagrant_provision-version1]; then
+
+# Instalar software necesario
+apt-get update
+apt-get install -y nginx mysql-server vim
+
+# Crear usuario administrativo
+echo "Creando usuario administrador..."
+adduser --quiet --disabled-password --shell /bin/bash --home /home/administrador \
+--gecos "Administrador" administrador
+
+# Setear password
+echo "administrador:password"|chpassword
+
+touch /var/vagrant_provision-version1
+fi
+
+if [ ! -f vagrant_provision-version2]; then
+mkdir /home/prueba
+touch /var/vagrant_provision-version2
+fi
+
+
+###ANSIBLE
+
+config.vm.provision "ansible" do |ansible|
+    ansible.playbook = "playbook.yml"
+end
+
+
+
+---
+- hosts: all
+  become: yes
+  tasks:
+    - name: Instalar paquetes necesarios
+      apt: 
+        name: "{{item}}"
+        state: present  
+        update_cache: yes
+      with_items:
+            - nginx
+            - mysql-server
+
+    - name: Crear usuario administrador
+      user: 
+        name: administrador
+        comment: Administrador
+        group: sudo
+        # Hash del texto 'password', obtenido mediante el comando mkpasswd --method=sha-512
+        password: '$6$YDh/TCKAec5fB$CctRYtZiUXk/u9BHUHnBqqRqlvOIGPMQOvovW3ispsclb847X4XsNLFeinvdrI6cli84eKbKgTdbfjwlyTbIR/'
+        shell: /bin/bash
+        state: present
+
+    - name: Creo el directorio /home/prueba
+      file:
+        path: /home/prueba
+        state: directory
+
+
+
+
+
+
+###PRIMERO - Creamo el directorio de la máquina
+###SEGUNDO - Ingresamos al directorio y ejecutamos vagrant init + debian/contrib-strech64
+###NOMBRE MÁQUINA - config.vm.hostname = "hostname"
+###MEMORIA/CPU - 
+vb.memory = "1024"
+vb.cpus = "2"
+vb.name = "hostname"
+###RED (Bridge)
+config.vm.network "private_network", ip: "192.168.200.10"
+###VOLUMES
+
+
+
+
+
+MULTIMACHINE
+
+VAGRANTFILE
+
+# -*- mode: ruby -*-
+# vi: set ft=ruby :
+
+Vagrant.configure("2") do |config|
+
+  config.vm.define "web" do |web|
+    web.vm.box = "debian/contrib-stretch64"
+    web.vm.hostname = "joomlaWebServer"
+    web.vm.network "private_network", ip: "192.168.33.10"
+    web.vm.synced_folder "src", "/var/www/html"
+    web.vm.provider "virtualbox" do |vb|
+      vb.memory = "1024"
+      vb.cpus = "2"
+      vb.name = "joomla-web2"
+    end   
+    web.vm.provision :ansible do |ansible|
+      ansible.playbook = "provisioning/playbook-web.yml"
+    end  
+  end
+
+  config.vm.define "db" do |db|
+    db.vm.box = "debian/contrib-stretch64" 
+    db.vm.hostname = "joomlaDatabaseServer"
+    db.vm.network "private_network", ip: "192.168.33.11"
+    db.vm.synced_folder "db-config", "/etc/mysql/mariadb.conf.d/"
+    db.vm.provider "virtualbox" do |vb| 
+      vb.memory = "512"
+      vb.cpus = "1"
+      vb.name = "joomla-db2"
+    end  
+    db.vm.provision :ansible do |ansible|
+      ansible.playbook = "provisioning/playbook-db.yml"
+    end             
+  end
+end
+
+
+PROVISIONING
+
+playbook-web.yml
+
+- hosts: all
+  become: yes
+  tasks:
+    - name: Instalar Servidor WEB (Apache)
+      apt: 
+        name: "{{item}}"
+        state: present  
+        update_cache: yes
+      with_items:
+            - apache2
+            - libapache2-mod-php7.0
+            
+    - name: Instalar PHP
+      apt: 
+        name: "{{item}}"
+        state: present  
+        update_cache: yes
+      with_items:
+            - php7.0
+            - php7.0-cli
+            - php7.0-mcrypt
+            - php7.0-intl
+            - php7.0-mysql
+            - php7.0-curl
+            - php7.0-gd
+            - php7.0-soap
+            - php7.0-xml
+            - php7.0-zip
+            - php7.0-readline
+            - php7.0-opcache
+            - php7.0-json
+            - php7.0-gd
+            - mariadb-client
+
+    - name: Asegurarse de que el servidor web esta corriendo
+      service:
+        name: apache2
+        state: started   
+
+
+
+playbook-db.yml
+
+---
+- hosts: all
+  become: yes
+  tasks:
+    - name: Instalar MariaDB
+      apt: 
+        name: "{{item}}"
+        state: present  
+        update_cache: yes
+      with_items:
+            - mariadb-server
+            - python-mysqldb
+
+    - name: Asegurarse de que el servidor de bases de datos esta corriendo
+      service:
+        name: mariadb
+        state: started  
+
+    - name: Crear la base de datos joomla_db
+      mysql_db:
+        name: joomla_db
+        state: present   
+
+    - name: Crear el usuario joomla
+      mysql_user:
+        name: joomla
+        password: password
+        priv: '*.*:ALL'
+        host: 192.168.33.10
+        state: present
+
+
+mariadb.conf
+
+[mysqld]
+bind-address = '192.168.33.11'
+
+
+Cuando hay un entorno de múltiples máquinas se debe indicar para que máquina son los comandos. Por ejemplo:
+"vagrant ssh web"
