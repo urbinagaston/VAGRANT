@@ -320,3 +320,5 @@ bind-address = '192.168.33.11'
 
 Cuando hay un entorno de múltiples máquinas se debe indicar para que máquina son los comandos. Por ejemplo:
 "vagrant ssh web"
+
+Para crear un box a partir de una vm = vagrant package
